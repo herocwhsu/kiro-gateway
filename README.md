@@ -516,11 +516,39 @@ Leave `VPN_PROXY_URL` empty (default) if you don't need proxy support.
 | `/health` | GET | Detailed health check |
 | `/v1/models` | GET | List available models |
 | `/v1/chat/completions` | POST | OpenAI Chat Completions API |
+| `/v1/responses` | POST | OpenAI Responses API (Codex CLI) |
 | `/v1/messages` | POST | Anthropic Messages API |
 
 ---
 
 ## 💡 Usage Examples
+
+### Codex CLI via OpenAI Responses API
+
+Create `~/.codex/kiro-gpt.config.toml`:
+
+```toml
+# ~/.codex/kiro-gpt.config.toml
+model = "<exact gpt-* ID selected by Kiro CLI /model>"
+model_provider = "kiro"
+
+[model_providers.kiro]
+name = "Kiro Gateway"
+base_url = "http://127.0.0.1:8000/v1"
+env_key = "KIRO_GATEWAY_API_KEY"
+wire_api = "responses"
+supports_websockets = false
+```
+
+```bash
+export KIRO_GATEWAY_API_KEY='<your gateway proxy key>'
+codex --profile kiro-gpt
+```
+
+`previous_response_id` continuation state is memory-only, retains at most 100
+responses, expires after two hours, and is cleared when the gateway restarts.
+The gateway remains loopback-bound. This feature does not change Claude Code's
+`/v1/messages` configuration.
 
 ### OpenAI API
 

@@ -86,6 +86,8 @@ from kiro.model_resolver import ModelResolver
 from kiro.account_manager import AccountManager
 from kiro.routes_openai import router as openai_router
 from kiro.routes_anthropic import router as anthropic_router
+from kiro.routes_responses import router as responses_router
+from kiro.responses_adapter import ResponseStateStore
 from kiro.exceptions import validation_exception_handler
 from kiro.debug_middleware import DebugLoggerMiddleware
 
@@ -332,6 +334,7 @@ async def lifespan(app: FastAPI):
     concurrent requests efficiently (fixes issue #24).
     """
     logger.info("Starting application... Creating state managers.")
+    app.state.responses_store = ResponseStateStore(max_entries=100, ttl_seconds=7200)
     
     # Create shared HTTP client with connection pooling
     # This reduces memory usage and enables connection reuse across requests
@@ -567,6 +570,7 @@ app.add_exception_handler(RequestValidationError, validation_exception_handler)
 # --- Route Registration ---
 # OpenAI-compatible API: /v1/models, /v1/chat/completions
 app.include_router(openai_router)
+app.include_router(responses_router)
 
 # Anthropic-compatible API: /v1/messages
 app.include_router(anthropic_router)
