@@ -742,7 +742,7 @@ Expected: pass after Task 5; this locks in endpoint coexistence before docs are 
 Add a “Codex CLI via OpenAI Responses API” section containing:
 
 ```toml
-# ~/.codex/kiro-gpt.config.toml
+# ~/.codex/codex-kiro.config.toml
 model = "<exact gpt-* ID selected by Kiro CLI /model>"
 model_provider = "kiro"
 
@@ -758,7 +758,7 @@ Document:
 
 ```bash
 export KIRO_GATEWAY_API_KEY='<your gateway proxy key>'
-codex --profile kiro-gpt
+codex --profile codex-kiro
 ```
 
 State that `previous_response_id` state is memory-only, capped at 100 responses, expires after two hours, and is cleared on restart. State explicitly that the gateway remains loopback-bound and that this feature does not change Claude Code’s `/v1/messages` configuration.

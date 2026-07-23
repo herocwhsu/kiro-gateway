@@ -525,10 +525,10 @@ Leave `VPN_PROXY_URL` empty (default) if you don't need proxy support.
 
 ### Codex CLI via OpenAI Responses API
 
-Create `~/.codex/kiro-gpt.config.toml`:
+Create `~/.codex/codex-kiro.config.toml`:
 
 ```toml
-# ~/.codex/kiro-gpt.config.toml
+# ~/.codex/codex-kiro.config.toml
 model = "<exact gpt-* ID selected by Kiro CLI /model>"
 model_provider = "kiro"
 
@@ -542,7 +542,7 @@ supports_websockets = false
 
 ```bash
 export KIRO_GATEWAY_API_KEY='<your gateway proxy key>'
-codex --profile kiro-gpt
+codex --profile codex-kiro
 ```
 
 `previous_response_id` continuation state is memory-only, retains at most 100
