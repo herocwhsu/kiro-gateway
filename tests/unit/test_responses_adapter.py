@@ -8,6 +8,7 @@ from kiro.responses_adapter import (
     ResponsesConversionError,
     chat_completion_to_response,
     chat_stream_to_responses,
+    codex_custom_tool_names,
     responses_to_chat_request,
 )
 
@@ -280,6 +281,220 @@ async def test_converts_chat_tool_call_deltas_to_responses_function_call_events(
     ]
     assert events[-1]["response"]["output"][0]["type"] == "function_call"
     assert events[-1]["response"]["output"][0]["arguments"] == '{"path":"a.py"}'
+
+
+def test_flattens_populated_tool_namespace_to_bare_names():
+    # Codex 0.149.1 sends no top-level "tools" key at all: declarations arrive as
+    # an additional_tools input item holding namespace containers. Before this was
+    # handled, every nested tool was dropped and the model reported having no
+    # terminal tool. The sibling test above uses an EMPTY namespace, so it never
+    # covered this shape -- which is how the drop went unnoticed.
+    request = ResponsesRequest.model_validate(
+        {
+            "model": "gpt-5",
+            "input": [
+                {
+                    "type": "additional_tools",
+                    "role": "developer",
+                    "tools": [
+                        {
+                            "type": "namespace",
+                            "name": "functions",
+                            "description": "",
+                            "tools": [
+                                {
+                                    "type": "custom",
+                                    "name": "exec",
+                                    "description": "Run JavaScript",
+                                    "format": {"type": "grammar", "syntax": "lark"},
+                                },
+                                {
+                                    "type": "function",
+                                    "name": "wait",
+                                    "parameters": {"type": "object", "properties": {}},
+                                },
+                            ],
+                        },
+                        {
+                            "type": "namespace",
+                            "name": "collaboration",
+                            "description": "Sub-agents.",
+                            "tools": [
+                                {
+                                    "type": "function",
+                                    "name": "spawn_agent",
+                                    "parameters": {"type": "object", "properties": {}},
+                                }
+                            ],
+                        },
+                    ],
+                },
+                {"type": "message", "role": "user", "content": "hi"},
+            ],
+        }
+    )
+
+    chat_request = responses_to_chat_request(request)
+
+    assert [tool.function.name for tool in chat_request.tools] == [
+        "exec",
+        "wait",
+        "spawn_agent",
+    ]
+    # The Kiro backend rejects a dot in a tool name with HTTP 400
+    # "Invalid tool use format", so no emitted name may contain one.
+    assert all("." not in tool.function.name for tool in chat_request.tools)
+
+
+def test_nested_custom_tool_is_classified_custom_by_bare_name():
+    # Both response paths decide custom_tool_call vs function_call by membership
+    # in this set. If the namespace is not flattened here too, functions.exec
+    # comes back misclassified as a plain function_call.
+    request = ResponsesRequest.model_validate(
+        {
+            "model": "gpt-5",
+            "input": [
+                {
+                    "type": "additional_tools",
+                    "tools": [
+                        {
+                            "type": "namespace",
+                            "name": "functions",
+                            "tools": [
+                                {"type": "custom", "name": "exec"},
+                                {"type": "function", "name": "wait", "parameters": {}},
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+
+    assert codex_custom_tool_names(request) == {"exec"}
+
+
+def test_colliding_nested_names_are_disambiguated_without_a_dot():
+    # Two namespaces both exposing "run": the second must be prefixed to stay
+    # distinct, and the separator must not be a dot (the backend rejects those).
+    request = ResponsesRequest.model_validate(
+        {
+            "model": "gpt-5",
+            "input": [
+                {
+                    "type": "additional_tools",
+                    "tools": [
+                        {
+                            "type": "namespace",
+                            "name": "alpha",
+                            "tools": [{"type": "function", "name": "run", "parameters": {}}],
+                        },
+                        {
+                            "type": "namespace",
+                            "name": "beta",
+                            "tools": [{"type": "function", "name": "run", "parameters": {}}],
+                        },
+                    ],
+                },
+                {"type": "message", "role": "user", "content": "hi"},
+            ],
+        }
+    )
+
+    chat_request = responses_to_chat_request(request)
+    names = [tool.function.name for tool in chat_request.tools]
+
+    assert names == ["run", "beta__run"]
+    assert all("." not in name for name in names)
+
+
+def test_empty_namespace_contributes_no_tools():
+    # Pins the behaviour the sibling test relies on: a namespace stub with no
+    # children must not synthesise a tool named after the namespace itself.
+    request = ResponsesRequest.model_validate(
+        {
+            "model": "gpt-5",
+            "input": "Hello",
+            "tools": [
+                {"type": "function", "name": "shell", "parameters": {}},
+                {"type": "namespace", "name": "functions"},
+            ],
+        }
+    )
+
+    chat_request = responses_to_chat_request(request)
+
+    assert [tool.function.name for tool in chat_request.tools] == ["shell"]
+
+
+def test_flattens_nested_namespaces_recursively():
+    request = ResponsesRequest.model_validate(
+        {
+            "model": "gpt-5",
+            "input": [
+                {
+                    "type": "additional_tools",
+                    "tools": [
+                        {
+                            "type": "namespace",
+                            "name": "outer",
+                            "tools": [
+                                {
+                                    "type": "namespace",
+                                    "name": "inner",
+                                    "tools": [
+                                        {
+                                            "type": "function",
+                                            "name": "leaf",
+                                            "parameters": {},
+                                        }
+                                    ],
+                                },
+                                {"type": "function", "name": "direct", "parameters": {}},
+                            ],
+                        }
+                    ],
+                },
+                {"type": "message", "role": "user", "content": "hi"},
+            ],
+        }
+    )
+
+    chat_request = responses_to_chat_request(request)
+
+    assert [tool.function.name for tool in chat_request.tools] == [
+        "leaf",
+        "direct",
+    ]
+
+
+def test_skips_non_dict_entries_inside_a_namespace():
+    request = ResponsesRequest.model_validate(
+        {
+            "model": "gpt-5",
+            "input": [
+                {
+                    "type": "additional_tools",
+                    "tools": [
+                        {
+                            "type": "namespace",
+                            "name": "functions",
+                            "tools": [
+                                "not-a-dict",
+                                None,
+                                {"type": "function", "name": "ok", "parameters": {}},
+                            ],
+                        }
+                    ],
+                },
+                {"type": "message", "role": "user", "content": "hi"},
+            ],
+        }
+    )
+
+    chat_request = responses_to_chat_request(request)
+
+    assert [tool.function.name for tool in chat_request.tools] == ["ok"]
 
 
 def test_ignores_codex_builtin_tools_when_converting_to_chat_request():

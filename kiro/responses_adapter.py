@@ -153,10 +153,62 @@ def _codex_additional_tools(input_data: Any) -> List[Dict[str, Any]]:
     ]
 
 
+def _flatten_tool_namespaces(declarations: List[Any]) -> List[Any]:
+    """Expand ``{"type": "namespace"}`` containers into their nested tools.
+
+    Codex 0.149.1 stopped sending a flat ``tools`` array. It sends no top-level
+    ``tools`` key at all; declarations arrive as an ``additional_tools`` input
+    item holding ``namespace`` containers (``functions``, ``collaboration``).
+    Without this expansion every nested tool hits the ``else: continue`` in
+    ``_chat_tools_from_responses`` and the model is handed an empty tool list --
+    which it reports as "no terminal tool is available".
+
+    Nested tools keep their BARE name (``exec``, not ``functions.exec``). Two
+    reasons, both load-bearing:
+
+    * The Kiro backend rejects a dot in a tool name -- a declaration named
+      ``functions.exec`` comes back as HTTP 400 ``Invalid tool use format
+      (REQUEST_BODY_INVALID)``, while ``shell``, ``functions__exec`` and
+      ``functions-exec`` are all accepted. Verified by probing the endpoint.
+    * A bare name is what the client declared the tool as, so the name needs no
+      translation on the way back out, nor when the client echoes the call in a
+      later request's ``input``. Any rewrite would have to be undone in three
+      places to keep a round-trip consistent.
+
+    A namespace prefix is applied only to break a collision, using ``__``
+    (dot-free, so it survives the backend's validation).
+    """
+    flat: List[Any] = []
+    seen: set[str] = set()
+
+    def walk(items: List[Any], prefix: str) -> None:
+        for declaration in items:
+            if not (isinstance(declaration, dict) and declaration.get("type") == "namespace"):
+                flat.append(declaration)
+                if isinstance(declaration, dict) and isinstance(declaration.get("name"), str):
+                    seen.add(declaration["name"])
+                continue
+            ns = declaration.get("name") or ""
+            nested_prefix = f"{prefix}__{ns}" if prefix and ns else (ns or prefix)
+            children: List[Any] = []
+            for nested in declaration.get("tools") or []:
+                if not isinstance(nested, dict):
+                    continue
+                child = dict(nested)
+                name = child.get("name") or ""
+                if name and name in seen and nested_prefix:
+                    child["name"] = f"{nested_prefix}__{name}"
+                children.append(child)
+            walk(children, nested_prefix)
+
+    walk(declarations, "")
+    return flat
+
+
 def _responses_tool_declarations(request: ResponsesRequest) -> List[Any]:
     declarations: List[Any] = [*(request.tools or [])]
     declarations.extend(_codex_additional_tools(request.input))
-    return declarations
+    return _flatten_tool_namespaces(declarations)
 
 
 def codex_custom_tool_names(request: ResponsesRequest) -> set[str]:
