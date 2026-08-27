@@ -337,6 +337,36 @@ class TestMessagesValidation:
         print(f"Status: {response.status_code}")
         assert response.status_code == 422
     
+    def test_accepts_system_role_in_messages(self, test_client, valid_proxy_api_key):
+        """
+        What it does: Verifies a system item INSIDE messages[] is not rejected.
+        Purpose: Claude Code sends system-role items in messages[]; upstream's
+        Literal["user","assistant"] 422s them, which looks like a sandboxed
+        client rather than a validation error. normalize_message_roles() maps
+        system/developer to user downstream, so the model must admit them.
+        Guards the opposite edge from test_validates_invalid_role: widening the
+        field to a bare `str` satisfies this test but breaks that one.
+        """
+        for role in ("system", "developer"):
+            print(f"Action: POST /v1/messages with role={role!r} in messages...")
+            response = test_client.post(
+                "/v1/messages",
+                headers={"x-api-key": valid_proxy_api_key},
+                json={
+                    "model": "claude-sonnet-4-5",
+                    "max_tokens": 1024,
+                    "messages": [
+                        {"role": role, "content": "You are helpful"},
+                        {"role": "user", "content": "Hello"}
+                    ]
+                }
+            )
+            print(f"Status: {response.status_code}")
+            assert response.status_code != 422, (
+                f"role={role!r} in messages[] was rejected at the Pydantic "
+                f"layer; normalize_message_roles() never gets to remap it"
+            )
+    
     def test_validates_invalid_role(self, test_client, valid_proxy_api_key):
         """
         What it does: Verifies invalid message role is rejected.
