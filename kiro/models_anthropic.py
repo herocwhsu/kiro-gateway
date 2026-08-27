@@ -187,7 +187,7 @@ class AnthropicMessage(BaseModel):
         content: Message content (string or list of content blocks)
     """
 
-    role: str  # accepts any role; normalize_message_roles() handles non-user/assistant values
+    role: Literal["user", "assistant", "system", "developer"]  # normalize_message_roles() maps system/developer to user
     content: Union[str, List[ContentBlock]]
 
     model_config = {"extra": "allow"}
