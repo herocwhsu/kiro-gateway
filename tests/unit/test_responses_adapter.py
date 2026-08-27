@@ -556,6 +556,74 @@ def test_serializes_codex_custom_exec_as_custom_tool_call():
 
 
 @pytest.mark.asyncio
+async def test_streams_tool_call_whose_index_does_not_start_at_zero():
+    # Every assistant_tool_calls read is keyed by the upstream `index`. While it
+    # was a list built with append(), an upstream opening at index 1 landed at
+    # position 0 and the very next read raised IndexError -- swallowed by the
+    # broad except and surfaced to the client as response.failed.
+    async def chat_stream():
+        yield (
+            'data: {"choices":[{"delta":{"tool_calls":[{"index":1,'
+            '"id":"call_one","function":{"name":"exec",'
+            '"arguments":"{\\"input\\":\\"echo hi\\"}"}}]}}]}\n\n'
+        )
+        yield "data: [DONE]\n\n"
+
+    events = [
+        json.loads(line.removeprefix("data: "))
+        async for chunk in chat_stream_to_responses(
+            chat_stream(), "resp_sparse", "gpt-5", custom_tool_names={"exec"}
+        )
+        for line in chunk.splitlines()
+        if line.startswith("data: ")
+    ]
+
+    types = [event["type"] for event in events]
+    assert "response.failed" not in types
+    assert types[-1] == "response.completed"
+    assert [item["name"] for item in events[-1]["response"]["output"]] == ["exec"]
+
+
+@pytest.mark.asyncio
+async def test_replays_tool_calls_in_index_order_not_arrival_order():
+    # Upstream may interleave parallel calls; the replayed assistant message must
+    # follow `index`, not the order deltas happened to arrive in.
+    async def chat_stream():
+        yield (
+            'data: {"choices":[{"delta":{"tool_calls":[{"index":1,'
+            '"id":"call_second","function":{"name":"beta","arguments":"{}"}}]}}]}\n\n'
+        )
+        yield (
+            'data: {"choices":[{"delta":{"tool_calls":[{"index":0,'
+            '"id":"call_first","function":{"name":"alpha","arguments":"{}"}}]}}]}\n\n'
+        )
+        yield "data: [DONE]\n\n"
+
+    captured = {}
+
+    async def on_complete(response, message):
+        captured["message"] = message
+
+    events = [
+        json.loads(line.removeprefix("data: "))
+        async for chunk in chat_stream_to_responses(
+            chat_stream(),
+            "resp_order",
+            "gpt-5",
+            on_complete=on_complete,
+        )
+        for line in chunk.splitlines()
+        if line.startswith("data: ")
+    ]
+
+    assert "response.failed" not in [event["type"] for event in events]
+    assert [call["function"]["name"] for call in captured["message"].tool_calls] == [
+        "alpha",
+        "beta",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_streams_codex_custom_exec_as_custom_tool_call():
     async def chat_stream():
         yield (

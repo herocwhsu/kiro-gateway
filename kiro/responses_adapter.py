@@ -401,7 +401,13 @@ async def chat_stream_to_responses(
 
     message_item: Optional[Dict[str, Any]] = None
     tool_items: Dict[int, Dict[str, Any]] = {}
-    assistant_tool_calls: List[Dict[str, Any]] = []
+    # Keyed by the upstream `index`, not append-ordered. Every read below is
+    # `assistant_tool_calls[index]`, so a list only worked while indices arrived
+    # dense, zero-based and in order: an upstream that opens with index 1 would
+    # append at position 0 and then IndexError on [1], which the broad except
+    # turns into response.failed. tool_items above was already a dict for the
+    # same reason; this just stops the two from disagreeing.
+    assistant_tool_calls: Dict[int, Dict[str, Any]] = {}
     output_text = ""
     try:
         async for raw_chunk in chat_stream:
@@ -432,16 +438,14 @@ async def chat_stream_to_responses(
                             "input" if is_custom_tool else "arguments": "",
                         }
                         tool_items[index] = item
-                        assistant_tool_calls.append(
-                            {
-                                "id": call_id,
-                                "type": "function",
-                                "function": {
-                                    "name": item["name"],
-                                    "arguments": "",
-                                },
-                            }
-                        )
+                        assistant_tool_calls[index] = {
+                            "id": call_id,
+                            "type": "function",
+                            "function": {
+                                "name": item["name"],
+                                "arguments": "",
+                            },
+                        }
                         response["output"].append(item)
                         yield _sse_event(
                             "response.output_item.added",
@@ -557,10 +561,13 @@ async def chat_stream_to_responses(
         )
     response["status"] = "completed"
     response["output_text"] = output_text
+    # Sort by index so the replayed order matches what upstream sent, not the
+    # order deltas happened to arrive in.
+    ordered_tool_calls = [assistant_tool_calls[i] for i in sorted(assistant_tool_calls)]
     assistant_message = ChatMessage(
         role="assistant",
         content=output_text,
-        tool_calls=assistant_tool_calls or None,
+        tool_calls=ordered_tool_calls or None,
     )
     if on_complete is not None:
         await on_complete(response, assistant_message)
