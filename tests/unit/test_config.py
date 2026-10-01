@@ -584,6 +584,17 @@ class TestFallbackModelsConfig:
         has_claude = any("claude" in mid.lower() for mid in model_ids)
         assert has_claude, "No Claude models in fallback list"
     
+    def test_fallback_models_match_kiro_served_models(self):
+        """
+        What it does: Pins the fallback list to models the runtime endpoint accepts.
+        Purpose: The runtime endpoint has no /ListAvailableModels, so this list IS what
+        /v1/models advertises; listing rejected IDs makes clients pick models that 400.
+        """
+        from kiro.config import FALLBACK_MODELS
+
+        model_ids = {m["modelId"] for m in FALLBACK_MODELS}
+        assert model_ids == {"auto", "claude-opus-5.5", "claude-sonnet-5", "claude-haiku-4.5"}
+
     def test_fallback_models_use_dot_format(self):
         """
         What it does: Verifies that model IDs use dot format (e.g., claude-4.5).
@@ -634,8 +645,8 @@ class TestFallbackModelsIntegration:
         print("\nAction: Testing normalization with dash format...")
         # Test that dash format (claude-opus-4-5) is normalized and found
         test_cases = [
-            ("claude-opus-4-5", "claude-opus-4.5"),  # Dash → Dot
-            ("claude-sonnet-4-5", "claude-sonnet-4.5"),  # Dash → Dot
+            ("claude-opus-5-5", "claude-opus-5.5"),  # Dash → Dot
+            ("claude-sonnet-5", "claude-sonnet-5"),  # No minor version
             ("claude-haiku-4-5", "claude-haiku-4.5"),  # Dash → Dot
         ]
         
