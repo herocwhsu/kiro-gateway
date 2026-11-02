@@ -245,10 +245,11 @@ HIDDEN_MODELS: Dict[str, str] = {
 #       "gpt-5": "claude-sonnet-4.5"
 #   }
 #
-# Default: {"auto-kiro": "auto"} to avoid Cursor IDE conflict
-MODEL_ALIASES: Dict[str, str] = {
-    "auto-kiro": "auto",  # Default alias to avoid Cursor's "auto" model conflict
-}
+# Default: empty. The old default {"auto-kiro": "auto"} was removed: aliases are only applied when
+# building the /v1/models list, not on the request path (converters call get_model_id_for_kiro,
+# which does not read this dict), so a client that picked "auto-kiro" from the list sent that
+# name to Kiro and got HTTP 400. Plain "auto" works.
+MODEL_ALIASES: Dict[str, str] = {}
 
 # Models to hide from /v1/models endpoint.
 # These models still work when requested directly, but are not shown in the model list.
@@ -259,8 +260,9 @@ MODEL_ALIASES: Dict[str, str] = {
 # Example:
 #   HIDDEN_FROM_LIST = ["auto", "claude-old-model"]
 #
-# Default: ["auto"] to show only "auto-kiro" alias
-HIDDEN_FROM_LIST: List[str] = ["auto"]
+# Default: empty, so "auto" stays in /v1/models (it answers; the "auto-kiro" alias it used to be
+# swapped for does not).
+HIDDEN_FROM_LIST: List[str] = []
 
 # ==================================================================================================
 # Fallback Models Configuration (DNS Failure Recovery)
