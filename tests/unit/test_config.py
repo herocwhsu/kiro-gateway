@@ -593,7 +593,7 @@ class TestFallbackModelsConfig:
         from kiro.config import FALLBACK_MODELS
 
         model_ids = {m["modelId"] for m in FALLBACK_MODELS}
-        assert model_ids == {"auto", "claude-opus-5.5", "claude-sonnet-5", "claude-haiku-4.5"}
+        assert model_ids == {"auto", "claude-opus-5.5", "claude-sonnet-5.5"}
 
     def test_fallback_models_use_dot_format(self):
         """
@@ -646,8 +646,8 @@ class TestFallbackModelsIntegration:
         # Test that dash format (claude-opus-4-5) is normalized and found
         test_cases = [
             ("claude-opus-5-5", "claude-opus-5.5"),  # Dash → Dot
-            ("claude-sonnet-5", "claude-sonnet-5"),  # No minor version
-            ("claude-haiku-4-5", "claude-haiku-4.5"),  # Dash → Dot
+            ("claude-sonnet-5-5", "claude-sonnet-5.5"),  # Dash → Dot
+            ("auto", "auto"),  # No version
         ]
         
         for input_name, expected_normalized in test_cases:

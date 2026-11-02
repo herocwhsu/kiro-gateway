@@ -276,8 +276,7 @@ HIDDEN_FROM_LIST: List[str] = ["auto"]
 FALLBACK_MODELS: List[Dict[str, str]] = [
     {"modelId": "auto"},
     {"modelId": "claude-opus-5.5"},
-    {"modelId": "claude-sonnet-5"},
-    {"modelId": "claude-haiku-4.5"},
+    {"modelId": "claude-sonnet-5.5"},
 ]
 
 # ==================================================================================================
